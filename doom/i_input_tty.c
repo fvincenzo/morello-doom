@@ -283,12 +283,37 @@ static int old_mode = -1;
 static struct termios old_term;
 static int kb = -1; /* keyboard file descriptor */
 
+static void set_tty(int tty_fd, const int mode)
+{
+    if (!tty_fd) {
+        fprintf(stderr, "tty%d: could not open console.\n", tty_fd);
+        exit(-1);
+    }
+
+    if (mode)
+	{
+		if (ioctl(tty_fd, KDSETMODE, KD_GRAPHICS))
+		{
+			fprintf(stderr, "tty%d: could not set console to KD_GRAPHICS mode.\n", tty_fd);
+			exit(-1);
+		}
+	} else {
+		if (ioctl(tty_fd, KDSETMODE, KD_TEXT))
+		{
+			fprintf(stderr, "tty%d: could not set console to KD_TEXT mode.\n", tty_fd);
+			exit(-1);
+		}
+	}
+}
+
 void kbd_shutdown(void)
 {
     /* Shut down nicely. */
 
     printf("Cleaning up.\n");
     fflush(stdout);
+
+    set_tty(kb, 0);
 
     printf("Exiting normally.\n");
     if (old_mode != -1) {
@@ -327,6 +352,11 @@ static int kbd_init(void)
         }
         close(kb);
     }
+
+    /*
+     * Remove blinking cursor
+     */
+    set_tty(kb, 1);
 
     /* If those didn't work, not all is lost. We can try the
        3 standard file descriptors, in hopes that one of them
