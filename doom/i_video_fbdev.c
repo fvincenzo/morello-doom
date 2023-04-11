@@ -44,6 +44,7 @@
 #include <sys/socket.h>
 #include <linux/fb.h>
 #include <sys/ioctl.h>
+#include <sys/kd.h>
 
 //#define CMAP256
 
@@ -159,8 +160,12 @@ void I_InitGraphics (void)
 {
     int i;
 
+    const char *fbdev_name = getenv("FB");
     /* Open fbdev file descriptor */
-    fd_fb = open("/dev/fb0", O_RDWR);
+    if (!fbdev_name) fbdev_name = "/dev/fb0";
+
+    /* Open fbdev file descriptor */
+    fd_fb = open(fbdev_name, O_RDWR);
     if (fd_fb < 0)
     {
         printf("Could not open /dev/fb0");
