@@ -75,6 +75,14 @@
 #include "w_wad.h"
 #include "z_zone.h"
 
+/* Define events M (mouse), K (keyboard) */
+#define NO_EVENT    0
+#define M_EVENT     1
+#define K_EVENT     10
+#define M_K_EVENT   11
+
+#define READ_EVENT(M, K)    ((K << 1) + M)
+
 int vanilla_keyboard_mapping = 1;
 
 // Is the shift key currently down?
@@ -448,7 +456,7 @@ int mouse_init(void)
     return 0;
 }
 
-int mouse_read(int *_status, unsigned char *_button, int *_abs_x, int *_abs_y)
+int mouse_read(unsigned char *_button, int *_abs_x, int *_abs_y)
 {
     struct input_event ievent;
     unsigned char *ptr = (unsigned char*)&ievent;
@@ -457,9 +465,9 @@ int mouse_read(int *_status, unsigned char *_button, int *_abs_x, int *_abs_y)
     char x, y;
     int abs_x = 0, abs_y = 0;
 
-    int status = -1;
-
-    status = read(mouse, &ievent, sizeof(struct input_event));
+    if (read(mouse, &ievent, sizeof(struct input_event))) {
+        return 0;
+    }
 
     button=ptr[0];
     
@@ -469,12 +477,11 @@ int mouse_read(int *_status, unsigned char *_button, int *_abs_x, int *_abs_y)
     abs_x += x;
     abs_y -= y;
 
-    *_status = status;
     *_button = button;
     *_abs_x = abs_x;
     *_abs_y = abs_y;
 
-    return status;
+    return 1;
 }
 
 static unsigned char TranslateKey(unsigned char key)
@@ -527,15 +534,17 @@ void I_GetEvent(void)
 {
     event_t event;
     int pressed;
+    int d_event;
     unsigned char key;
     unsigned char button = 0;
     int abs_x = 0, abs_y = 0;
-    int status = -1;
 
     // put event-grabbing stuff in here
     
-    while (kbd_read(&pressed, &key) || mouse_read(&status, &button, &abs_x, &abs_y))
+    while (1)
     {
+        d_event = READ_EVENT(mouse_read(&button, &abs_x, &abs_y), kbd_read(&pressed, &key));
+
         if (key == 0x0E) {
             kbd_shutdown();
             I_Quit();
@@ -545,49 +554,58 @@ void I_GetEvent(void)
 
         // process event
         
-        if (!pressed)
-        {
-            // data1 has the key pressed, data2 has the character
-            // (shift-translated, etc)
-            event.type = ev_keydown;
-            event.data1 = TranslateKey(key);
-            event.data2 = GetTypedChar(key);
-
-            if (event.data1 != 0)
-            {
+        switch (d_event) {
+            case M_EVENT:
+                event.type = ev_mouse;
+                event.data1 = button;
+                event.data2 = abs_x;
+                event.data3 = abs_y;
                 D_PostEvent(&event);
-            }
-        }
-        else
-        {
-            event.type = ev_keyup;
-            event.data1 = TranslateKey(key);
-
-            // data2 is just initialized to zero for ev_keyup.
-            // For ev_keydown it's the shifted Unicode character
-            // that was typed, but if something wants to detect
-            // key releases it should do so based on data1
-            // (key ID), not the printable char.
-
-            event.data2 = 0;
-
-            if (event.data1 != 0)
-            {
+                break;
+            case M_K_EVENT:
+                event.type = ev_mouse;
+                event.data1 = button;
+                event.data2 = abs_x;
+                event.data3 = abs_y;
                 D_PostEvent(&event);
-            }
-            break;
+            case K_EVENT:
+                if (!pressed) {
+                    // data1 has the key pressed, data2 has the character
+                    // (shift-translated, etc)
+                    event.type = ev_keydown;
+                    event.data1 = TranslateKey(key);
+                    event.data2 = GetTypedChar(key);
+
+                    if (event.data1 != 0)
+                    {
+                        D_PostEvent(&event);
+                    }
+                } else {
+                    event.type = ev_keyup;
+                    event.data1 = TranslateKey(key);
+
+                    // data2 is just initialized to zero for ev_keyup.
+                    // For ev_keydown it's the shifted Unicode character
+                    // that was typed, but if something wants to detect
+                    // key releases it should do so based on data1
+                    // (key ID), not the printable char.
+
+                    event.data2 = 0;
+
+                    if (event.data1 != 0)
+                    {
+                        D_PostEvent(&event);
+                    }
+                }
+                break;
+            case NO_EVENT:
+            default:
+                break;
         }
 
-        if (status != -1)
-        {
-            event.type = ev_mouse;
-            event.data1 = button;
-            event.data2 = abs_x;
-            event.data3 = abs_y;
-            D_PostEvent(&event);
-
+        /* if no event was present exit the loop and return */
+        if (d_event == NO_EVENT)
             break;
-        }
     }
 }
 
